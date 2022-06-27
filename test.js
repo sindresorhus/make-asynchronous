@@ -61,7 +61,7 @@ test('iterator object', async t => {
 test('generator function', async t => {
 	const fixture = [1, 2];
 
-	const asyncIterator = await makeAsynchronousIterator(function* (fixture) {
+	const asyncIterator = await makeAsynchronousIterator(function * (fixture) {
 		for (const value of fixture) {
 			yield value;
 		}
@@ -74,4 +74,4 @@ test('generator function', async t => {
 	}
 
 	t.deepEqual(result, fixture);
-})
+});
