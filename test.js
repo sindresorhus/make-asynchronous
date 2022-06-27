@@ -1,7 +1,7 @@
 import test from 'ava';
 import timeSpan from 'time-span';
 import inRange from 'in-range';
-import makeAsynchronous from './index.js';
+import makeAsynchronous, {makeAsynchronousIterator} from './index.js';
 
 test('main', async t => {
 	const fixture = {x: '🦄'};
@@ -44,3 +44,34 @@ test.failing('dynamic import works', async t => {
 		})(),
 	);
 });
+
+test('iterator object', async t => {
+	const fixture = [1, 2];
+
+	const asyncIterator = await makeAsynchronousIterator(fixture => fixture[Symbol.iterator]())(fixture);
+	const result = [];
+
+	for await (const value of asyncIterator) {
+		result.push(value);
+	}
+
+	t.deepEqual(result, fixture);
+});
+
+test('generator function', async t => {
+	const fixture = [1, 2];
+
+	const asyncIterator = await makeAsynchronousIterator(function* (fixture) {
+		for (const value of fixture) {
+			yield value;
+		}
+	})(fixture);
+
+	const result = [];
+
+	for await (const value of asyncIterator) {
+		result.push(value);
+	}
+
+	t.deepEqual(result, fixture);
+})

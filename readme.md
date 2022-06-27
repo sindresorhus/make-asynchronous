@@ -35,6 +35,22 @@ Returns a wrapped version of the given function which executes asynchronously in
 
 The given function is serialized, so you cannot use any variables or imports from outside the function scope. You can instead pass in arguments to the function.
 
+### makeAsynchronousIterator(function)
+
+Make the iterator returned by a function asynchronous by running it in a worker.
+
+```js
+import makeAsynchronous from 'make-asynchronous';
+
+const fn = makeAsynchronous(function * () {
+	yield * performExpensiveOperation(number);
+});
+
+for await (const number of await fn(2)) {
+	console.log(number);
+}
+```
+
 ## Related
 
 - [make-synchronous](https://github.com/sindresorhus/make-synchronous) - Make an asynchronous function synchronous
