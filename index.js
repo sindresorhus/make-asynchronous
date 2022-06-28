@@ -112,34 +112,7 @@ const makeIteratorContent = function_ =>
 export function makeAsynchronousIterator(function_) {
 	return (...arguments_) => ({
 		async * [Symbol.asyncIterator]() {
-			let worker;
-			let cleanup;
-
-			const failure = error => {
-				cleanup();
-				throw error;
-			};
-
-			try {
-				({worker, cleanup} = createWorker(makeIteratorContent(function_)));
-			} catch (error) {
-				failure(error);
-				return;
-			}
-
-			worker.addEventListener('message', ({data}) => {
-				if (data.error) {
-					failure(data.error);
-				}
-			});
-
-			worker.addEventListener('messageerror', error => {
-				failure(error);
-			});
-
-			worker.addEventListener('error', error => {
-				failure(error);
-			});
+			const {worker, cleanup} = createWorker(makeIteratorContent(function_));
 
 			try {
 				let isFirstMessage = true;
@@ -148,7 +121,15 @@ export function makeAsynchronousIterator(function_) {
 					worker.postMessage(isFirstMessage ? arguments_ : undefined);
 					isFirstMessage = false;
 
-					const {data: {output: {done, value}}} = await pEvent(worker, 'message'); // eslint-disable-line no-await-in-loop
+					const {data} = await pEvent(worker, 'message', { // eslint-disable-line no-await-in-loop
+						rejectionEvents: ['messageerror', 'error'],
+					});
+
+					if (data.error) {
+						throw data.error;
+					}
+
+					const {value, done} = data.output;
 
 					if (done) {
 						break;
@@ -156,10 +137,8 @@ export function makeAsynchronousIterator(function_) {
 
 					yield value;
 				}
-
+			} finally {
 				cleanup();
-			} catch (error) {
-				failure(error);
 			}
 		},
 	});

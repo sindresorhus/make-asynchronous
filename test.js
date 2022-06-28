@@ -75,3 +75,28 @@ test('generator function', async t => {
 
 	t.deepEqual(result, fixture);
 });
+
+test('generator function that throws', async t => {
+	const fixture = [1, 2];
+	const errorMessage = 'Catch me if you can!';
+
+	const asyncIterator = await makeAsynchronousIterator(function * (fixture, errorMessage) {
+		for (const value of fixture) {
+			yield value;
+		}
+
+		throw new Error(errorMessage);
+	})(fixture, errorMessage);
+
+	const result = [];
+
+	try {
+		for await (const value of asyncIterator) {
+			result.push(value);
+		}
+	} catch (error) {
+		t.is(error.message, errorMessage, 'error is propagated');
+	}
+
+	t.deepEqual(result, fixture);
+});

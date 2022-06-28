@@ -45,4 +45,4 @@ for await (const number of await fn(2)) {
 }
 ```
 */
-export function makeAsynchronousIterator<T extends (...arguments_: any) => AsyncIterable<any> | Iterable<any>>(function_: T): SetReturnType<T, AsyncIterable<IteratorFunctionValue<T>>>;
+export function makeAsynchronousIterator<T extends (...arguments_: any) => AsyncIterable<any> | Iterable<any>>(function_: T): SetReturnType<T, Promise<AsyncIterable<IteratorFunctionValue<T>>>>;

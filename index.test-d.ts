@@ -11,4 +11,4 @@ const fn2 = makeAsynchronousIterator(function * () { // eslint-disable-line @typ
 	}
 });
 
-expectType<AsyncIterable<number>>(fn2());
+expectType<Promise<AsyncIterable<number>>>(fn2());
