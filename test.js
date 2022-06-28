@@ -1,7 +1,7 @@
 import test from 'ava';
 import timeSpan from 'time-span';
 import inRange from 'in-range';
-import makeAsynchronous, {makeAsynchronousIterator} from './index.js';
+import makeAsynchronous, {makeAsynchronousIterable} from './index.js';
 
 test('main', async t => {
 	const fixture = {x: '🦄'};
@@ -48,10 +48,10 @@ test.failing('dynamic import works', async t => {
 test('iterator object', async t => {
 	const fixture = [1, 2];
 
-	const asyncIterator = await makeAsynchronousIterator(fixture => fixture[Symbol.iterator]())(fixture);
+	const asyncIterable = makeAsynchronousIterable(fixture => fixture[Symbol.iterator]())(fixture);
 	const result = [];
 
-	for await (const value of asyncIterator) {
+	for await (const value of asyncIterable) {
 		result.push(value);
 	}
 
@@ -61,7 +61,7 @@ test('iterator object', async t => {
 test('generator function', async t => {
 	const fixture = [1, 2];
 
-	const asyncIterator = await makeAsynchronousIterator(function * (fixture) {
+	const asyncIterable = makeAsynchronousIterable(function * (fixture) {
 		for (const value of fixture) {
 			yield value;
 		}
@@ -69,7 +69,7 @@ test('generator function', async t => {
 
 	const result = [];
 
-	for await (const value of asyncIterator) {
+	for await (const value of asyncIterable) {
 		result.push(value);
 	}
 
@@ -80,7 +80,7 @@ test('generator function that throws', async t => {
 	const fixture = [1, 2];
 	const errorMessage = 'Catch me if you can!';
 
-	const asyncIterator = await makeAsynchronousIterator(function * (fixture, errorMessage) {
+	const asyncIterable = makeAsynchronousIterable(function * (fixture, errorMessage) {
 		for (const value of fixture) {
 			yield value;
 		}
@@ -90,13 +90,13 @@ test('generator function that throws', async t => {
 
 	const result = [];
 
-	try {
-		for await (const value of asyncIterator) {
+	await t.throwsAsync(async () => {
+		for await (const value of asyncIterable) {
 			result.push(value);
 		}
-	} catch (error) {
-		t.is(error.message, errorMessage, 'error is propagated');
-	}
+	}, {
+		message: errorMessage,
+	}, 'error is propagated');
 
 	t.deepEqual(result, fixture);
 });

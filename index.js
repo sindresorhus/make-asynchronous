@@ -91,7 +91,7 @@ const makeIteratorContent = function_ =>
 	};
 	`;
 
-export function makeAsynchronousIterator(function_) {
+export function makeAsynchronousIterable(function_) {
 	return (...arguments_) => ({
 		async * [Symbol.asyncIterator]() {
 			const {worker, cleanup} = createWorker(makeIteratorContent(function_));

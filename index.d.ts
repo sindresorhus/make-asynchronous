@@ -34,9 +34,9 @@ The given function is serialized, so you cannot use any variables or imports fro
 
 @example
 ```
-import {makeAsynchronousIterator} from 'make-asynchronous';
+import {makeAsynchronousIterable} from 'make-asynchronous';
 
-const fn = makeAsynchronousIterator(function * () {
+const fn = makeAsynchronousIterable(function * () {
 	yield * performExpensiveOperation(number);
 });
 
@@ -45,4 +45,4 @@ for await (const number of await fn(2)) {
 }
 ```
 */
-export function makeAsynchronousIterator<T extends (...arguments_: any) => AsyncIterable<any> | Iterable<any>>(function_: T): SetReturnType<T, Promise<AsyncIterable<IteratorFunctionValue<T>>>>;
+export function makeAsynchronousIterable<T extends (...arguments_: any) => AsyncIterable<any> | Iterable<any>>(function_: T): SetReturnType<T, AsyncIterable<IteratorFunctionValue<T>>>;

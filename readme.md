@@ -35,14 +35,14 @@ Returns a wrapped version of the given function which executes asynchronously in
 
 The given function is serialized, so you cannot use any variables or imports from outside the function scope. You can instead pass in arguments to the function.
 
-### makeAsynchronousIterator(function)
+### makeAsynchronousIterable(function)
 
 Make the iterator returned by a function asynchronous by running it in a worker.
 
 ```js
-import {makeAsynchronousIterator} from 'make-asynchronous';
+import {makeAsynchronousIterable} from 'make-asynchronous';
 
-const fn = makeAsynchronousIterator(function * () {
+const fn = makeAsynchronousIterable(function * () {
 	yield * performExpensiveOperation(number);
 });
 
