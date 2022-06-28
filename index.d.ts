@@ -40,7 +40,7 @@ const fn = makeAsynchronousIterable(function * () {
 	yield * performExpensiveOperation(number);
 });
 
-for await (const number of await fn(2)) {
+for await (const number of fn(2)) {
 	console.log(number);
 }
 ```
