@@ -49,45 +49,27 @@ const makeContent = function_ =>
 	`;
 
 export default function makeAsynchronous(function_) {
-	return (...arguments_) => new Promise((resolve, reject) => {
-		let worker;
-		let cleanup;
-
-		const failure = error => {
-			cleanup();
-			reject(error);
-		};
+	return async (...arguments_) => {
+		const {worker, cleanup} = createWorker(makeContent(function_));
 
 		try {
-			({worker, cleanup} = createWorker(makeContent(function_)));
-		} catch (error) {
-			failure(error);
-			return;
-		}
+			const promise = pEvent(worker, 'message', {
+				rejectionEvents: ['error', 'messageerror'],
+			});
 
-		worker.addEventListener('message', ({data}) => {
-			if (data.error) {
-				failure(data.error);
-			} else {
-				cleanup();
-				resolve(data.output);
-			}
-		});
-
-		worker.addEventListener('messageerror', error => {
-			failure(error);
-		});
-
-		worker.addEventListener('error', error => {
-			failure(error);
-		});
-
-		try {
 			worker.postMessage(arguments_);
-		} catch (error) {
-			failure(error);
+
+			const {data: {output, error}} = await promise;
+
+			if (error) {
+				throw error;
+			}
+
+			return output;
+		} finally {
+			cleanup();
 		}
-	});
+	};
 }
 
 const makeIteratorContent = function_ =>
@@ -118,18 +100,20 @@ export function makeAsynchronousIterator(function_) {
 				let isFirstMessage = true;
 
 				while (true) {
-					worker.postMessage(isFirstMessage ? arguments_ : undefined);
-					isFirstMessage = false;
-
-					const {data} = await pEvent(worker, 'message', { // eslint-disable-line no-await-in-loop
+					const promise = pEvent(worker, 'message', {
 						rejectionEvents: ['messageerror', 'error'],
 					});
 
-					if (data.error) {
-						throw data.error;
+					worker.postMessage(isFirstMessage ? arguments_ : undefined);
+					isFirstMessage = false;
+
+					const {data: {output, error}} = await promise; // eslint-disable-line no-await-in-loop
+
+					if (error) {
+						throw error;
 					}
 
-					const {value, done} = data.output;
+					const {value, done} = output;
 
 					if (done) {
 						break;
