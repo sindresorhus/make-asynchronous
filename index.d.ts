@@ -34,9 +34,9 @@ The given function is serialized, so you cannot use any variables or imports fro
 
 @example
 ```
-import makeAsynchronous from 'make-asynchronous';
+import {makeAsynchronousIterator} from 'make-asynchronous';
 
-const fn = makeAsynchronous(function * () {
+const fn = makeAsynchronousIterator(function * () {
 	yield * performExpensiveOperation(number);
 });
 
