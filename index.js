@@ -92,7 +92,7 @@ export default function makeAsynchronous(function_) {
 
 const makeIteratorContent = function_ =>
 	`
-	let nothing = Symbol('nothing');
+	const nothing = Symbol('nothing');
 	let iterator = nothing;
 
 	globalThis.onmessage = async ({data: arguments_}) => {
