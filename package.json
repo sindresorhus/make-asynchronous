@@ -1,6 +1,6 @@
 {
 	"name": "make-asynchronous",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"description": "Make a synchronous function asynchronous by running it in a worker",
 	"license": "MIT",
 	"repository": "sindresorhus/make-asynchronous",
