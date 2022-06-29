@@ -1,7 +1,7 @@
 import test from 'ava';
 import timeSpan from 'time-span';
 import inRange from 'in-range';
-import makeAsynchronous from './index.js';
+import makeAsynchronous, {makeAsynchronousIterable} from './index.js';
 
 test('main', async t => {
 	const fixture = {x: '🦄'};
@@ -43,4 +43,60 @@ test.failing('dynamic import works', async t => {
 			await import('time-span');
 		})(),
 	);
+});
+
+test('iterator object', async t => {
+	const fixture = [1, 2];
+
+	const asyncIterable = makeAsynchronousIterable(fixture => fixture[Symbol.iterator]())(fixture);
+	const result = [];
+
+	for await (const value of asyncIterable) {
+		result.push(value);
+	}
+
+	t.deepEqual(result, fixture);
+});
+
+test('generator function', async t => {
+	const fixture = [1, 2];
+
+	const asyncIterable = makeAsynchronousIterable(function * (fixture) {
+		for (const value of fixture) {
+			yield value;
+		}
+	})(fixture);
+
+	const result = [];
+
+	for await (const value of asyncIterable) {
+		result.push(value);
+	}
+
+	t.deepEqual(result, fixture);
+});
+
+test('generator function that throws', async t => {
+	const fixture = [1, 2];
+	const errorMessage = 'Catch me if you can!';
+
+	const asyncIterable = makeAsynchronousIterable(function * (fixture, errorMessage) {
+		for (const value of fixture) {
+			yield value;
+		}
+
+		throw new Error(errorMessage);
+	})(fixture, errorMessage);
+
+	const result = [];
+
+	await t.throwsAsync(async () => {
+		for await (const value of asyncIterable) {
+			result.push(value);
+		}
+	}, {
+		message: errorMessage,
+	}, 'error is propagated');
+
+	t.deepEqual(result, fixture);
 });

@@ -39,6 +39,7 @@
 		"pool"
 	],
 	"dependencies": {
+		"p-event": "^5.0.1",
 		"type-fest": "^2.14.0",
 		"web-worker": "^1.2.0"
 	},

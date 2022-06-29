@@ -1,12 +1,46 @@
 import Worker from 'web-worker';
+import {pEvent} from 'p-event';
 
 const isNode = Boolean(globalThis.process?.versions?.node);
 
+const makeBlob = content => new globalThis.Blob([content], {type: 'text/javascript'});
+
+// TODO: Remove this when targeting Node.js 18 (`Blob` global is supported) and if https://github.com/developit/web-worker/issues/30 is fixed.
+const makeDataUrl = content => {
+	const data = globalThis.Buffer.from(content).toString('base64');
+	return `data:text/javascript;base64,${data}`;
+};
+
+function createWorker(content) {
+	let url;
+	let worker;
+
+	const cleanup = () => {
+		if (url) {
+			URL.revokeObjectURL(url);
+		}
+
+		worker?.terminate();
+	};
+
+	if (isNode) {
+		worker = new Worker(makeDataUrl(content), {type: 'module'});
+	} else {
+		url = URL.createObjectURL(makeBlob(content));
+		worker = new Worker(url, {type: 'module'});
+	}
+
+	return {
+		worker,
+		cleanup,
+	};
+}
+
 const makeContent = function_ =>
 	`
-	globalThis.onmessage = async event => {
+	globalThis.onmessage = async ({data: arguments_}) => {
 		try {
-			const output = await (${function_.toString()})(...event.data);
+			const output = await (${function_.toString()})(...arguments_);
 			globalThis.postMessage({output});
 		} catch (error) {
 			globalThis.postMessage({error});
@@ -14,65 +48,82 @@ const makeContent = function_ =>
 	};
 	`;
 
-const makeBlob = function_ => new globalThis.Blob([makeContent(function_)], {type: 'text/javascript'});
-
-// TODO: Remove this when targeting Node.js 18 (`Blob` global is supported) and if https://github.com/developit/web-worker/issues/30 is fixed.
-const makeDataUrl = function_ => {
-	const data = globalThis.Buffer.from(makeContent(function_)).toString('base64');
-	return `data:text/javascript;base64,${data}`;
-};
-
 export default function makeAsynchronous(function_) {
-	return (...arguments_) => new Promise((resolve, reject) => {
-		let url;
-		let worker;
-
-		const cleanup = () => {
-			if (url) {
-				URL.revokeObjectURL(url);
-			}
-
-			worker?.terminate();
-		};
-
-		const failure = error => {
-			cleanup();
-			reject(error);
-		};
+	return async (...arguments_) => {
+		const {worker, cleanup} = createWorker(makeContent(function_));
 
 		try {
-			if (isNode) {
-				worker = new Worker(makeDataUrl(function_), {type: 'module'});
-			} else {
-				url = URL.createObjectURL(makeBlob(function_));
-				worker = new Worker(url, {type: 'module'});
-			}
-		} catch (error) {
-			failure(error);
-			return;
-		}
+			const promise = pEvent(worker, 'message', {
+				rejectionEvents: ['error', 'messageerror'],
+			});
 
-		worker.addEventListener('message', ({data}) => {
-			if (data.error) {
-				failure(data.error);
-			} else {
-				cleanup();
-				resolve(data.output);
-			}
-		});
-
-		worker.addEventListener('messageerror', error => {
-			failure(error);
-		});
-
-		worker.addEventListener('error', error => {
-			failure(error);
-		});
-
-		try {
 			worker.postMessage(arguments_);
-		} catch (error) {
-			failure(error);
+
+			const {data: {output, error}} = await promise;
+
+			if (error) {
+				throw error;
+			}
+
+			return output;
+		} finally {
+			cleanup();
 		}
+	};
+}
+
+const makeIterableContent = function_ =>
+	`
+	const nothing = Symbol('nothing');
+	let iterator = nothing;
+
+	globalThis.onmessage = async ({data: arguments_}) => {
+		try {
+			if (iterator === nothing) {
+				iterator = await (${function_.toString()})(...arguments_);
+			}
+
+			const output = await iterator.next();
+			globalThis.postMessage({output});
+		} catch (error) {
+			globalThis.postMessage({error});
+		}
+	};
+	`;
+
+export function makeAsynchronousIterable(function_) {
+	return (...arguments_) => ({
+		async * [Symbol.asyncIterator]() {
+			const {worker, cleanup} = createWorker(makeIterableContent(function_));
+
+			try {
+				let isFirstMessage = true;
+
+				while (true) {
+					const promise = pEvent(worker, 'message', {
+						rejectionEvents: ['messageerror', 'error'],
+					});
+
+					worker.postMessage(isFirstMessage ? arguments_ : undefined);
+					isFirstMessage = false;
+
+					const {data: {output, error}} = await promise; // eslint-disable-line no-await-in-loop
+
+					if (error) {
+						throw error;
+					}
+
+					const {value, done} = output;
+
+					if (done) {
+						break;
+					}
+
+					yield value;
+				}
+			} finally {
+				cleanup();
+			}
+		},
 	});
 }
