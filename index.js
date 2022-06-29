@@ -72,7 +72,7 @@ export default function makeAsynchronous(function_) {
 	};
 }
 
-const makeIteratorContent = function_ =>
+const makeIterableContent = function_ =>
 	`
 	const nothing = Symbol('nothing');
 	let iterator = nothing;
@@ -94,7 +94,7 @@ const makeIteratorContent = function_ =>
 export function makeAsynchronousIterable(function_) {
 	return (...arguments_) => ({
 		async * [Symbol.asyncIterator]() {
-			const {worker, cleanup} = createWorker(makeIteratorContent(function_));
+			const {worker, cleanup} = createWorker(makeIterableContent(function_));
 
 			try {
 				let isFirstMessage = true;

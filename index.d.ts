@@ -23,10 +23,10 @@ console.log(await fn(2));
 */
 export default function makeAsynchronous<T extends AnyFunction>(function_: T): Asyncify<T>;
 
-type IteratorFunctionValue<T> = T extends (...arguments_: any) => AsyncIterable<infer Value> | Iterable<infer Value> ? Value : any;
+type IterableFunctionValue<T> = T extends ((...arguments_: any) => AsyncIterable<infer Value> | Iterable<infer Value>) ? Value : unknown;
 
 /**
-Make the iterator returned by a function asynchronous by running it in a worker.
+Make the iterable returned by a function asynchronous by running it in a worker.
 
 Returns a wrapped version of the given function which executes asynchronously in a background thread (meaning it will not block the main thread).
 
@@ -45,4 +45,4 @@ for await (const number of fn(2)) {
 }
 ```
 */
-export function makeAsynchronousIterable<T extends (...arguments_: any) => AsyncIterable<any> | Iterable<any>>(function_: T): SetReturnType<T, AsyncIterable<IteratorFunctionValue<T>>>;
+export function makeAsynchronousIterable<T extends (...arguments_: any) => AsyncIterable<unknown> | Iterable<unknown>>(function_: T): SetReturnType<T, AsyncIterable<IterableFunctionValue<T>>>;

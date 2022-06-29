@@ -37,7 +37,7 @@ The given function is serialized, so you cannot use any variables or imports fro
 
 ### makeAsynchronousIterable(function)
 
-Make the iterator returned by a function asynchronous by running it in a worker.
+Make the iterable returned by a function asynchronous by running it in a worker.
 
 ```js
 import {makeAsynchronousIterable} from 'make-asynchronous';
