@@ -244,6 +244,7 @@ export function makeAsynchronousIterable(function_) {
 
 				throw error;
 			} finally {
+				abortPromise.cancel();
 				cleanup();
 			}
 		},
