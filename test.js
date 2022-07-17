@@ -25,6 +25,34 @@ test('main', async t => {
 	t.deepEqual(result, fixture);
 });
 
+test('with pre-aborted AbortSignal', async t => {
+	const controller = new AbortController();
+	const abortMessage = 'Aborted';
+
+	controller.abort(abortMessage);
+
+	await t.throwsAsync(makeAsynchronous(() => {
+		while (true) {} // eslint-disable-line no-constant-condition, no-empty
+	}).withSignal(controller.signal), {
+		message: abortMessage,
+	});
+});
+
+test('with interrupting abortion of AbortSignal', async t => {
+	const controller = new AbortController();
+	const abortMessage = 'Aborted';
+
+	const promise = makeAsynchronous(() => {
+		while (true) {} // eslint-disable-line no-constant-condition, no-empty
+	}).withSignal(controller.signal)();
+
+	controller.abort(abortMessage);
+
+	await t.throwsAsync(promise, {
+		message: abortMessage,
+	});
+});
+
 test('error', async t => {
 	await t.throwsAsync(
 		makeAsynchronous(() => {
@@ -56,6 +84,40 @@ test('iterator object', async t => {
 	}
 
 	t.deepEqual(result, fixture);
+});
+
+test('iterator object with pre-aborted AbortSignal', async t => {
+	const controller = new AbortController();
+	const abortMessage = 'Aborted';
+
+	controller.abort(abortMessage);
+
+	const asyncIterable = makeAsynchronousIterable(function * () { // eslint-disable-line require-yield
+		while (true) {} // eslint-disable-line no-constant-condition, no-empty
+	}).withSignal(controller.signal)();
+
+	await t.throwsAsync(async () => {
+		for await (const _ of asyncIterable) {} // eslint-disable-line no-unused-vars, no-empty
+	}, {
+		message: abortMessage,
+	});
+});
+
+test('iterator object with interrupting abortion of AbortSignal', async t => {
+	const controller = new AbortController();
+	const abortMessage = 'Aborted';
+
+	const asyncIterable = makeAsynchronousIterable(function * () { // eslint-disable-line require-yield
+		while (true) {} // eslint-disable-line no-constant-condition, no-empty
+	}).withSignal(controller.signal)();
+
+	controller.abort(abortMessage);
+
+	await t.throwsAsync(async () => {
+		for await (const _ of asyncIterable) {} // eslint-disable-line no-unused-vars, no-empty
+	}, {
+		message: abortMessage,
+	});
 });
 
 test('generator function', async t => {

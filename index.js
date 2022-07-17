@@ -5,6 +5,36 @@ const isNode = Boolean(globalThis.process?.versions?.node);
 
 const makeBlob = content => new globalThis.Blob([content], {type: 'text/javascript'});
 
+/**
+An error to be thrown when the request is aborted by AbortController.
+DOMException is thrown instead of this Error when DOMException is available.
+*/
+export class AbortError extends Error {
+	constructor(message) {
+		super();
+		this.name = 'AbortError';
+		this.message = message;
+	}
+}
+
+/**
+TODO: Remove AbortError and just throw DOMException when targeting Node 18.
+*/
+const getDOMException = errorMessage => globalThis.DOMException === undefined
+	? new AbortError(errorMessage)
+	: new DOMException(errorMessage);
+
+/**
+TODO: Remove below function and just 'reject(signal.reason)' when targeting Node 18.
+*/
+function getAbortedReason(signal) {
+	const reason = signal.reason === undefined
+		? getDOMException('This operation was aborted.')
+		: signal.reason;
+
+	return reason instanceof Error ? reason : getDOMException(reason);
+}
+
 // TODO: Remove this when targeting Node.js 18 (`Blob` global is supported) and if https://github.com/developit/web-worker/issues/30 is fixed.
 const makeDataUrl = content => {
 	const data = globalThis.Buffer.from(content).toString('base64');
@@ -49,27 +79,64 @@ const makeContent = function_ =>
 	`;
 
 export default function makeAsynchronous(function_) {
-	return async (...arguments_) => {
-		const {worker, cleanup} = createWorker(makeContent(function_));
+	const content = makeContent(function_);
+	const setup = () => createWorker(content);
+
+	async function run({worker, arguments_}) {
+		const promise = pEvent(worker, 'message', {
+			rejectionEvents: ['error', 'messageerror'],
+		});
+
+		worker.postMessage(arguments_);
+
+		const {data: {output, error}} = await promise;
+
+		if (error) {
+			throw error;
+		}
+
+		return output;
+	}
+
+	const fn = async (...arguments_) => {
+		const {worker, cleanup} = setup();
 
 		try {
-			const promise = pEvent(worker, 'message', {
-				rejectionEvents: ['error', 'messageerror'],
-			});
-
-			worker.postMessage(arguments_);
-
-			const {data: {output, error}} = await promise;
-
-			if (error) {
-				throw error;
-			}
-
-			return output;
+			return await run({arguments_, worker});
 		} finally {
 			cleanup();
 		}
 	};
+
+	fn.withSignal = signal => async (...arguments_) => {
+		if (signal.aborted) {
+			throw getAbortedReason(signal);
+		}
+
+		const {worker, cleanup} = setup();
+
+		const abortPromise = pEvent(signal, [], {
+			rejectionEvents: ['abort'],
+		});
+
+		try {
+			return await Promise.race([
+				run({arguments_, worker}),
+				abortPromise,
+			]);
+		} catch (error) {
+			if (signal.aborted) {
+				throw getAbortedReason(signal);
+			}
+
+			throw error;
+		} finally {
+			abortPromise.cancel();
+			cleanup();
+		}
+	};
+
+	return fn;
 }
 
 const makeIterableContent = function_ =>
@@ -92,16 +159,19 @@ const makeIterableContent = function_ =>
 	`;
 
 export function makeAsynchronousIterable(function_) {
-	return (...arguments_) => ({
+	const content = makeIterableContent(function_);
+	const setup = () => createWorker(content);
+
+	const fn = (...arguments_) => ({
 		async * [Symbol.asyncIterator]() {
-			const {worker, cleanup} = createWorker(makeIterableContent(function_));
+			const {worker, cleanup} = setup();
 
 			try {
 				let isFirstMessage = true;
 
 				while (true) {
 					const promise = pEvent(worker, 'message', {
-						rejectionEvents: ['messageerror', 'error'],
+						rejectionEvents: ['error', 'messageerror'],
 					});
 
 					worker.postMessage(isFirstMessage ? arguments_ : undefined);
@@ -126,4 +196,58 @@ export function makeAsynchronousIterable(function_) {
 			}
 		},
 	});
+
+	fn.withSignal = signal => (...arguments_) => ({
+		async * [Symbol.asyncIterator]() {
+			if (signal.aborted) {
+				throw getAbortedReason(signal);
+			}
+
+			const {worker, cleanup} = setup();
+
+			const abortPromise = pEvent(signal, [], {
+				rejectionEvents: ['abort'],
+			});
+
+			try {
+				let isFirstMessage = true;
+
+				while (true) {
+					const promise = Promise.race([
+						pEvent(worker, 'message', {
+							rejectionEvents: ['error', 'messageerror'],
+						}),
+						abortPromise,
+					]);
+
+					worker.postMessage(isFirstMessage ? arguments_ : undefined);
+					isFirstMessage = false;
+
+					const {data: {output, error}} = await promise; // eslint-disable-line no-await-in-loop
+
+					if (error) {
+						throw error;
+					}
+
+					const {value, done} = output;
+
+					if (done) {
+						break;
+					}
+
+					yield value;
+				}
+			} catch (error) {
+				if (signal.aborted) {
+					throw getAbortedReason(signal);
+				}
+
+				throw error;
+			} finally {
+				cleanup();
+			}
+		},
+	});
+
+	return fn;
 }
