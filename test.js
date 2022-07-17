@@ -3,6 +3,8 @@ import timeSpan from 'time-span';
 import inRange from 'in-range';
 import makeAsynchronous, {makeAsynchronousIterable} from './index.js';
 
+const testIf = condition => condition ? test : () => {};
+
 test('main', async t => {
 	const fixture = {x: '🦄'};
 	const end = timeSpan();
@@ -25,7 +27,7 @@ test('main', async t => {
 	t.deepEqual(result, fixture);
 });
 
-test('with pre-aborted AbortSignal', async t => {
+testIf(AbortController)('with pre-aborted AbortSignal', async t => {
 	const controller = new AbortController();
 	const abortMessage = 'Aborted';
 
@@ -38,7 +40,7 @@ test('with pre-aborted AbortSignal', async t => {
 	});
 });
 
-test('with interrupting abortion of AbortSignal', async t => {
+testIf(AbortController)('with interrupting abortion of AbortSignal', async t => {
 	const controller = new AbortController();
 	const abortMessage = 'Aborted';
 
@@ -86,7 +88,7 @@ test('iterator object', async t => {
 	t.deepEqual(result, fixture);
 });
 
-test('iterator object with pre-aborted AbortSignal', async t => {
+testIf(AbortController)('iterator object with pre-aborted AbortSignal', async t => {
 	const controller = new AbortController();
 	const abortMessage = 'Aborted';
 
@@ -103,7 +105,7 @@ test('iterator object with pre-aborted AbortSignal', async t => {
 	});
 });
 
-test('iterator object with interrupting abortion of AbortSignal', async t => {
+testIf(AbortController)('iterator object with interrupting abortion of AbortSignal', async t => {
 	const controller = new AbortController();
 	const abortMessage = 'Aborted';
 
