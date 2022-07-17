@@ -27,7 +27,7 @@ test('main', async t => {
 	t.deepEqual(result, fixture);
 });
 
-testIf(AbortController)('with pre-aborted AbortSignal', async t => {
+testIf(globalThis.AbortController)('with pre-aborted AbortSignal', async t => {
 	const controller = new AbortController();
 	const abortMessage = 'Aborted';
 
@@ -40,7 +40,7 @@ testIf(AbortController)('with pre-aborted AbortSignal', async t => {
 	});
 });
 
-testIf(AbortController)('with interrupting abortion of AbortSignal', async t => {
+testIf(globalThis.AbortController)('with interrupting abortion of AbortSignal', async t => {
 	const controller = new AbortController();
 	const abortMessage = 'Aborted';
 
@@ -88,7 +88,7 @@ test('iterator object', async t => {
 	t.deepEqual(result, fixture);
 });
 
-testIf(AbortController)('iterator object with pre-aborted AbortSignal', async t => {
+testIf(globalThis.AbortController)('iterator object with pre-aborted AbortSignal', async t => {
 	const controller = new AbortController();
 	const abortMessage = 'Aborted';
 
@@ -105,7 +105,7 @@ testIf(AbortController)('iterator object with pre-aborted AbortSignal', async t 
 	});
 });
 
-testIf(AbortController)('iterator object with interrupting abortion of AbortSignal', async t => {
+testIf(globalThis.AbortController)('iterator object with interrupting abortion of AbortSignal', async t => {
 	const controller = new AbortController();
 	const abortMessage = 'Aborted';
 
