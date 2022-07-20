@@ -51,6 +51,29 @@ for await (const number of fn(2)) {
 }
 ```
 
+#### fn.withSignal(signal)
+
+The function returned by `makeAsynchronous` and `makeAsynchronousIterable` has an additional method which allows an [`AbortSignal`](https://developer.mozilla.org/en-US/docs/Web/API/AbortSignal) to be provided.
+
+```js
+import makeAsynchronous from 'make-asynchronous';
+
+const fn = makeAsynchronous(number => {
+	return performExpensiveOperation(number);
+});
+
+const controller = new AbortController();
+const timeoutId = setTimeout(() => {
+	controller.abort();
+}, 1000); // 1 second timeout
+
+const result = await fn.withSignal(controller.signal)(2);
+clearTimeout(timeoutId);
+
+console.log(result);
+//=> 345342
+```
+
 ## Related
 
 - [make-synchronous](https://github.com/sindresorhus/make-synchronous) - Make an asynchronous function synchronous
