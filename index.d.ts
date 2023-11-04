@@ -1,4 +1,4 @@
-import {Asyncify, SetReturnType} from 'type-fest';
+import {type Asyncify, type SetReturnType} from 'type-fest';
 
 type AnyFunction = (...arguments_: any) => unknown;
 
@@ -63,7 +63,7 @@ The given function is serialized, so you cannot use any variables or imports fro
 ```
 import {makeAsynchronousIterable} from 'make-asynchronous';
 
-const fn = makeAsynchronousIterable(function * () {
+const fn = makeAsynchronousIterable(function * (number) {
 	yield * performExpensiveOperation(number);
 });
 

@@ -5,37 +5,7 @@ const isNode = Boolean(globalThis.process?.versions?.node);
 
 const makeBlob = content => new globalThis.Blob([content], {type: 'text/javascript'});
 
-/**
-An error to be thrown when the request is aborted by AbortController.
-DOMException is thrown instead of this Error when DOMException is available.
-*/
-export class AbortError extends Error {
-	constructor(message) {
-		super();
-		this.name = 'AbortError';
-		this.message = message;
-	}
-}
-
-/**
-TODO: Remove AbortError and just throw DOMException when targeting Node 18.
-*/
-const getDOMException = errorMessage => globalThis.DOMException === undefined
-	? new AbortError(errorMessage)
-	: new DOMException(errorMessage);
-
-/**
-TODO: Remove below function and just 'reject(signal.reason)' when targeting Node 18.
-*/
-function getAbortedReason(signal) {
-	const reason = signal.reason === undefined
-		? getDOMException('This operation was aborted.')
-		: signal.reason;
-
-	return reason instanceof Error ? reason : getDOMException(reason);
-}
-
-// TODO: Remove this when targeting Node.js 18 (`Blob` global is supported) and if https://github.com/developit/web-worker/issues/30 is fixed.
+// TODO: Remove this when https://github.com/developit/web-worker/issues/30 is fixed.
 const makeDataUrl = content => {
 	const data = globalThis.Buffer.from(content).toString('base64');
 	return `data:text/javascript;base64,${data}`;
@@ -109,9 +79,7 @@ export default function makeAsynchronous(function_) {
 	};
 
 	fn.withSignal = signal => async (...arguments_) => {
-		if (signal.aborted) {
-			throw getAbortedReason(signal);
-		}
+		signal.throwIfAborted();
 
 		const {worker, cleanup} = setup();
 
@@ -125,10 +93,7 @@ export default function makeAsynchronous(function_) {
 				abortPromise,
 			]);
 		} catch (error) {
-			if (signal.aborted) {
-				throw getAbortedReason(signal);
-			}
-
+			signal.throwIfAborted();
 			throw error;
 		} finally {
 			abortPromise.cancel();
@@ -199,9 +164,7 @@ export function makeAsynchronousIterable(function_) {
 
 	fn.withSignal = signal => (...arguments_) => ({
 		async * [Symbol.asyncIterator]() {
-			if (signal.aborted) {
-				throw getAbortedReason(signal);
-			}
+			signal.throwIfAborted();
 
 			const {worker, cleanup} = setup();
 
@@ -238,10 +201,7 @@ export function makeAsynchronousIterable(function_) {
 					yield value;
 				}
 			} catch (error) {
-				if (signal.aborted) {
-					throw getAbortedReason(signal);
-				}
-
+				signal.throwIfAborted();
 				throw error;
 			} finally {
 				abortPromise.cancel();

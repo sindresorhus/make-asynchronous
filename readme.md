@@ -42,7 +42,7 @@ Make the iterable returned by a function asynchronous by running it in a worker.
 ```js
 import {makeAsynchronousIterable} from 'make-asynchronous';
 
-const fn = makeAsynchronousIterable(function * () {
+const fn = makeAsynchronousIterable(function * (number) {
 	yield * performExpensiveOperation(number);
 });
 
