@@ -43,7 +43,7 @@
 	"dependencies": {
 		"p-event": "^6.0.0",
 		"type-fest": "^4.6.0",
-		"web-worker": "^1.2.0"
+		"web-worker": "1.2.0"
 	},
 	"devDependencies": {
 		"ava": "^5.3.1",
