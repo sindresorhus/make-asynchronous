@@ -65,6 +65,7 @@ test('error', async t => {
 	);
 });
 
+// https://github.com/developit/web-worker/issues/51
 test.failing('dynamic import works', async t => {
 	await t.notThrowsAsync(
 		makeAsynchronous(async () => {
