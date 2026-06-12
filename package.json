@@ -16,8 +16,11 @@
 		"default": "./index.js"
 	},
 	"sideEffects": false,
+	"browser": {
+		"node:worker_threads": false
+	},
 	"engines": {
-		"node": ">=22"
+		"node": ">=22.15.0"
 	},
 	"scripts": {
 		"test": "xo && ava && tsd"
@@ -36,15 +39,13 @@
 		"sync",
 		"web",
 		"worker",
-		"thread",
 		"cpu",
 		"expensive",
 		"pool"
 	],
 	"dependencies": {
 		"p-event": "^7.1.0",
-		"type-fest": "^5.7.0",
-		"web-worker": "^1.5.0"
+		"type-fest": "^5.7.0"
 	},
 	"devDependencies": {
 		"ava": "^8.0.1",
@@ -56,8 +57,7 @@
 	},
 	"xo": {
 		"rules": {
-			"n/prefer-global/process": "off",
-			"n/prefer-global/buffer": "off"
+			"n/prefer-global/process": "off"
 		}
 	},
 	"ava": {

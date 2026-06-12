@@ -4,7 +4,7 @@
 
 This makes it super simple to offload some expensive work without having to deal with the complex Web Workers API.
 
-**Please upvote [this Node.js issue](https://github.com/nodejs/node/issues/43583) 🙏** It would let us reduce the amount of dependencies and simplify the code.
+**Please upvote [this Node.js issue](https://github.com/nodejs/node/issues/43583) 🙏** It would let us simplify the code.
 
 *Works in Node.js and browsers.*
 
@@ -29,15 +29,17 @@ console.log(await fn(2));
 
 ## API
 
-### makeAsynchronous(function)
+### makeAsynchronous(function, options?)
 
 Returns a wrapped version of the given function which executes asynchronously in a background thread (meaning it will not block the main thread).
 
 The given function is serialized, so you cannot use any variables or imports from outside the function scope. You can instead pass in arguments to the function.
 
-### makeAsynchronousIterable(function)
+### makeAsynchronousIterable(function, options?)
 
 Make the iterable returned by a function asynchronous by running it in a worker.
+
+The given function is serialized, so you cannot use any variables or imports from outside the function scope. You can instead pass in arguments to the function.
 
 ```js
 import {makeAsynchronousIterable} from 'make-asynchronous';
@@ -49,6 +51,31 @@ const fn = makeAsynchronousIterable(function * (number) {
 for await (const number of fn(2)) {
 	console.log(number);
 }
+```
+
+#### options
+
+Type: `object`
+
+The options are the same for `makeAsynchronous` and `makeAsynchronousIterable`.
+
+##### baseUrl
+
+Type: `string | URL`
+
+Base URL used to resolve bare dynamic imports in Node.js workers.
+
+Pass `import.meta.url` when the function dynamically imports dependencies from the module that creates the wrapper.
+
+```js
+import makeAsynchronous from 'make-asynchronous';
+
+const fn = makeAsynchronous(async () => {
+	const {default: package_} = await import('package-owned-by-this-module');
+	return package_;
+}, {
+	baseUrl: import.meta.url,
+});
 ```
 
 #### fn.withSignal(signal)

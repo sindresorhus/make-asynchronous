@@ -1,9 +1,26 @@
+import fs from 'node:fs/promises';
+import {execFile} from 'node:child_process';
+import {tmpdir} from 'node:os';
+import {promisify} from 'node:util';
+import {fileURLToPath, pathToFileURL} from 'node:url';
 import test from 'ava';
 import timeSpan from 'time-span';
 import inRange from 'in-range';
 import makeAsynchronous, {makeAsynchronousIterable} from './index.js';
 
 const abortError = new Error('Aborted');
+const execFileAsync = promisify(execFile);
+const source = await fs.readFile(new URL('index.js', import.meta.url), 'utf8');
+const package_ = JSON.parse(await fs.readFile(new URL('package.json', import.meta.url), 'utf8'));
+
+test('browser entrypoint does not statically import worker_threads', t => {
+	t.notRegex(source, /^import .*node:worker_threads/mv);
+	t.notRegex(source, /import\(['"]node:worker_threads['"]\)/v);
+});
+
+test('Node engine supports syntax detection and module hooks', t => {
+	t.is(package_.engines.node, '>=22.15.0');
+});
 
 test('main', async t => {
 	const fixture = {x: '🦄'};
@@ -69,11 +86,95 @@ test('error', async t => {
 	);
 });
 
-// https://github.com/developit/web-worker/issues/51
-test.failing('dynamic import works', async t => {
+test('dynamic import works', async t => {
 	await t.notThrowsAsync(makeAsynchronous(async () => {
 		await import('time-span');
 	})());
+});
+
+test('dynamic import of cwd dependencies works by default', async t => {
+	const cwd = await fs.mkdtemp(`${tmpdir()}/make-asynchronous-`);
+
+	try {
+		const dependencyDirectory = new URL('node_modules/fixture-dependency/', pathToFileURL(`${cwd}/`));
+		await fs.mkdir(dependencyDirectory, {recursive: true});
+		await fs.writeFile(new URL('package.json', dependencyDirectory), JSON.stringify({
+			type: 'module',
+			exports: './index.js',
+		}));
+		await fs.writeFile(new URL('index.js', dependencyDirectory), 'export default "fixture";');
+
+		const {stdout} = await execFileAsync(process.execPath, [
+			'--input-type=module',
+			'--eval',
+			`
+				import makeAsynchronous from ${JSON.stringify(new URL('index.js', import.meta.url).href)};
+
+				const result = await makeAsynchronous(async () => {
+					const {default: value} = await import('fixture-dependency');
+					return value;
+				})();
+
+				console.log(result);
+			`,
+		], {
+			cwd,
+		});
+
+		t.is(stdout.trim(), 'fixture');
+	} finally {
+		await fs.rm(cwd, {recursive: true});
+	}
+});
+
+test('dynamic import of caller dependencies works with baseUrl', async t => {
+	const fixture = await fs.mkdtemp(`${tmpdir()}/make-asynchronous-`);
+	const cwd = await fs.mkdtemp(`${tmpdir()}/make-asynchronous-`);
+
+	try {
+		const dependencyDirectory = new URL('node_modules/fixture-dependency/', pathToFileURL(`${fixture}/`));
+		await fs.mkdir(dependencyDirectory, {recursive: true});
+		await fs.writeFile(new URL('package.json', dependencyDirectory), JSON.stringify({
+			type: 'module',
+			exports: './index.js',
+		}));
+		await fs.writeFile(new URL('index.js', dependencyDirectory), 'export default "fixture";');
+
+		const script = new URL('run.mjs', pathToFileURL(`${fixture}/`));
+		await fs.writeFile(script, `
+			import makeAsynchronous from ${JSON.stringify(new URL('index.js', import.meta.url).href)};
+
+			const result = await makeAsynchronous(async () => {
+				const {default: value} = await import('fixture-dependency');
+				return value;
+			}, {
+				baseUrl: import.meta.url,
+			})();
+
+			console.log(result);
+		`);
+
+		const {stdout} = await execFileAsync(process.execPath, [fileURLToPath(script)], {
+			cwd,
+		});
+
+		t.is(stdout.trim(), 'fixture');
+	} finally {
+		await fs.rm(fixture, {recursive: true});
+		await fs.rm(cwd, {recursive: true});
+	}
+});
+
+test('import.meta works', async t => {
+	const result = await makeAsynchronous(() => import.meta.url)();
+
+	t.is(typeof result, 'string');
+});
+
+test('self works in Node.js workers', async t => {
+	const result = await makeAsynchronous(() => self.crypto.randomUUID())(); // eslint-disable-line unicorn/prefer-global-this, no-undef
+
+	t.is(typeof result, 'string');
 });
 
 test('iterator object', async t => {

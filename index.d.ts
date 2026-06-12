@@ -2,6 +2,27 @@ import {type Asyncify, type SetReturnType} from 'type-fest';
 
 type AnyFunction = (...arguments_: any) => unknown;
 
+export type Options = {
+	/**
+	Base URL used to resolve bare dynamic imports in Node.js workers.
+
+	Pass `import.meta.url` when the function dynamically imports dependencies from the module that creates the wrapper.
+
+	@example
+	```
+	import makeAsynchronous from 'make-asynchronous';
+
+	const fn = makeAsynchronous(async () => {
+		const {default: package_} = await import('package-owned-by-this-module');
+		return package_;
+	}, {
+		baseUrl: import.meta.url,
+	});
+	```
+	*/
+	readonly baseUrl?: string | URL;
+};
+
 type MakeAsynchronous<T> = T & {
 	/**
 	The function returned by `makeAsynchronous` and `makeAsynchronousIterable` has an additional method which allows an [`AbortSignal`](https://developer.mozilla.org/en-US/docs/Web/API/AbortSignal) to be provided.
@@ -48,7 +69,7 @@ console.log(await fn(2));
 //=> 345342
 ```
 */
-export default function makeAsynchronous<T extends AnyFunction>(function_: T): MakeAsynchronous<Asyncify<T>>;
+export default function makeAsynchronous<T extends AnyFunction>(function_: T, options?: Options): MakeAsynchronous<Asyncify<T>>;
 
 type IterableFunctionValue<T> = T extends ((...arguments_: any) => AsyncIterable<infer Value> | Iterable<infer Value>) ? Value : unknown;
 
@@ -74,4 +95,5 @@ for await (const number of fn(2)) {
 */
 export function makeAsynchronousIterable<T extends (...arguments_: any) => AsyncIterable<unknown> | Iterable<unknown>>(
 	function_: T,
+	options?: Options,
 ): MakeAsynchronous<SetReturnType<T, AsyncIterable<IterableFunctionValue<T>>>>;
