@@ -12,7 +12,7 @@ test('main', async t => {
 	const result = await makeAsynchronous(fixture => {
 		let x = '1';
 
-		while (true) { // eslint-disable-line no-constant-condition
+		while (true) {
 			x += Math.random() < 0.5 ? Date.now().toString() : '0';
 
 			if (x >= 9_999_999_999_999) {
@@ -33,7 +33,9 @@ test('with pre-aborted AbortSignal', async t => {
 	controller.abort(abortError);
 
 	await t.throwsAsync(makeAsynchronous(() => {
-		while (true) {} // eslint-disable-line no-constant-condition, no-empty
+		while (true) {
+			// Wait to be aborted.
+		}
 	}).withSignal(controller.signal), {
 		message: abortError.message,
 	});
@@ -43,7 +45,9 @@ test('with interrupting abortion of AbortSignal', async t => {
 	const controller = new AbortController();
 
 	const promise = makeAsynchronous(() => {
-		while (true) {} // eslint-disable-line no-constant-condition, no-empty
+		while (true) {
+			// Wait to be aborted.
+		}
 	}).withSignal(controller.signal)();
 
 	controller.abort(abortError);
@@ -67,11 +71,9 @@ test('error', async t => {
 
 // https://github.com/developit/web-worker/issues/51
 test.failing('dynamic import works', async t => {
-	await t.notThrowsAsync(
-		makeAsynchronous(async () => {
-			await import('time-span');
-		})(),
-	);
+	await t.notThrowsAsync(makeAsynchronous(async () => {
+		await import('time-span');
+	})());
 });
 
 test('iterator object', async t => {
@@ -93,11 +95,15 @@ test('iterator object with pre-aborted AbortSignal', async t => {
 	controller.abort(abortError);
 
 	const asyncIterable = makeAsynchronousIterable(function * () { // eslint-disable-line require-yield
-		while (true) {} // eslint-disable-line no-constant-condition, no-empty
+		while (true) {
+			// Wait to be aborted.
+		}
 	}).withSignal(controller.signal)();
 
 	await t.throwsAsync(async () => {
-		for await (const _ of asyncIterable) {} // eslint-disable-line no-unused-vars, no-empty
+		for await (const _ of asyncIterable) {
+			// Iterate until aborted.
+		}
 	}, {
 		message: abortError.message,
 	});
@@ -107,13 +113,17 @@ test('iterator object with interrupting abortion of AbortSignal', async t => {
 	const controller = new AbortController();
 
 	const asyncIterable = makeAsynchronousIterable(function * () { // eslint-disable-line require-yield
-		while (true) {} // eslint-disable-line no-constant-condition, no-empty
+		while (true) {
+			// Wait to be aborted.
+		}
 	}).withSignal(controller.signal)();
 
 	controller.abort(abortError);
 
 	await t.throwsAsync(async () => {
-		for await (const _ of asyncIterable) {} // eslint-disable-line no-unused-vars, no-empty
+		for await (const _ of asyncIterable) {
+			// Iterate until aborted.
+		}
 	}, {
 		message: abortError.message,
 	});

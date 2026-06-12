@@ -6,6 +6,7 @@ const isNode = Boolean(globalThis.process?.versions?.node);
 const makeBlob = content => new globalThis.Blob([content], {type: 'text/javascript'});
 
 // TODO: Remove this when https://github.com/developit/web-worker/issues/30 is fixed.
+// TODO: When targeting Node.js 24, use `new TextEncoder().encode(content).toBase64()` instead of `Buffer`.
 const makeDataUrl = content => {
 	const data = globalThis.Buffer.from(content).toString('base64');
 	return `data:text/javascript;base64,${data}`;

@@ -72,4 +72,6 @@ for await (const number of fn(2)) {
 }
 ```
 */
-export function makeAsynchronousIterable<T extends (...arguments_: any) => AsyncIterable<unknown> | Iterable<unknown>>(function_: T): MakeAsynchronous<SetReturnType<T, AsyncIterable<IterableFunctionValue<T>>>>;
+export function makeAsynchronousIterable<T extends (...arguments_: any) => AsyncIterable<unknown> | Iterable<unknown>>(
+	function_: T,
+): MakeAsynchronous<SetReturnType<T, AsyncIterable<IterableFunctionValue<T>>>>;
