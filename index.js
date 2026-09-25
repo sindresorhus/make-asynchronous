@@ -1,5 +1,3 @@
-import {pEvent} from 'p-event';
-
 const isNode = Boolean(globalThis.process?.versions?.node);
 
 // Assembled at runtime so bundlers don't statically detect the import and try to bundle `node:worker_threads` for browsers.
@@ -33,11 +31,42 @@ const nodeWorkerPreamble = String.raw`
 	parentPort.on('message', data => globalThis.onmessage({data}));
 `;
 
-async function createWorker(content, {baseUrl} = {}) {
+async function createWorker(content, {baseUrl} = {}, signal) {
+	const {Worker} = isNode ? await import(workerThreadsSpecifier) : globalThis;
+
+	// Checked after the only `await`, so an abortion at any point before the worker exists means it is never created.
+	signal?.throwIfAborted();
+
 	let url;
 	let worker;
 
+	// A worker can fail at any moment, also when the main thread is not waiting for a message. Remember the failure so it can still be surfaced, and keep a permanent listener so that a late failure never becomes an uncaught exception. A worker can fail with any value, including a falsy one, so the value cannot tell whether it did.
+	let hasFailed = false;
+	let failure;
+
+	// A worker only ever has one request in flight, as a call makes one and an iteration waits for each reply before it asks for the next value. One listener serves every request, so iterating does not pay for a listener per item.
+	let pendingRequest;
+
+	const rememberFailure = error => {
+		if (hasFailed) {
+			return;
+		}
+
+		hasFailed = true;
+		failure = error;
+
+		pendingRequest?.reject(error);
+		pendingRequest = undefined;
+	};
+
+	// An abortion is just another way for the worker to fail.
+	const abort = () => {
+		rememberFailure(signal.reason);
+	};
+
 	const cleanup = () => {
+		signal?.removeEventListener('abort', abort);
+
 		if (url) {
 			URL.revokeObjectURL(url);
 		}
@@ -46,8 +75,7 @@ async function createWorker(content, {baseUrl} = {}) {
 	};
 
 	if (isNode) {
-		const {Worker: NodeWorker} = await import(workerThreadsSpecifier);
-		worker = new NodeWorker(nodeWorkerPreamble + content, {
+		worker = new Worker(nodeWorkerPreamble + content, {
 			eval: true,
 			workerData: {
 				baseUrl: baseUrl ? String(baseUrl) : undefined,
@@ -55,201 +83,225 @@ async function createWorker(content, {baseUrl} = {}) {
 		});
 	} else {
 		url = URL.createObjectURL(makeBlob(content));
-		worker = new globalThis.Worker(url, {type: 'module'});
+
+		try {
+			worker = new Worker(url, {type: 'module'});
+		} catch (error) {
+			// `cleanup()` is never handed out when the worker cannot be created, for example because of a content security policy, so the URL has to be revoked here.
+			URL.revokeObjectURL(url);
+			throw error;
+		}
 	}
 
+	signal?.addEventListener('abort', abort);
+
+	// A Node.js worker is an `EventEmitter` while a Web Worker only has `addEventListener()`.
+	const on = (event, listener) => {
+		if (isNode) {
+			worker.on(event, listener);
+		} else {
+			worker.addEventListener(event, listener);
+		}
+	};
+
+	// A stray message that no request is waiting for is dropped, which keeps the wrapped function from taking over the message channel.
+	on('message', message => {
+		const data = getMessageData(message);
+
+		if (pendingRequest && data?.id === pendingRequest.id) {
+			pendingRequest.resolve(data);
+			pendingRequest = undefined;
+		}
+	});
+
+	on('error', rememberFailure);
+	on('messageerror', rememberFailure);
+
+	if (isNode) {
+		// A worker can also stop without reporting an error, for example by calling `process.exit()`. Node.js delivers the messages the worker posted before emitting `exit`, so a reply sent just before stopping still arrives.
+		on('exit', code => {
+			rememberFailure(new Error(`Worker exited with code ${code}`));
+		});
+	}
+
+	let requestCount = 0;
+
+	// Posts to the worker and waits for the reply, rejecting if the worker fails first.
+	const request = arguments_ => {
+		if (hasFailed) {
+			return Promise.reject(failure);
+		}
+
+		// The wrapped function shares the worker globals and can post messages of its own, so every reply carries the id of the request it answers.
+		const id = ++requestCount;
+
+		const promise = new Promise((resolve, reject) => {
+			pendingRequest = {id, resolve, reject};
+		});
+
+		try {
+			worker.postMessage({id, arguments_});
+		} catch (error) {
+			// Posting throws for arguments that cannot be cloned, which would leave the wait dangling.
+			pendingRequest = undefined;
+			throw error;
+		}
+
+		return promise;
+	};
+
 	return {
-		worker,
 		cleanup,
+		request,
 	};
 }
 
+// Cloning an error keeps only its message, stack, and cause, so everything else is sent along. A property that cannot be cloned would take the whole message down with it, hence the fallback, and a thrown value that cannot be cloned at all is replaced by the error that says so.
+const errorReporter = String.raw`
+	const getErrorProperties = error => {
+		if (typeof error !== 'object' || error === null) {
+			return undefined;
+		}
+
+		const properties = {...error};
+
+		// Not an own enumerable property, so spreading the error would miss it.
+		if (Array.isArray(error.errors)) {
+			properties.errors = error.errors;
+		}
+
+		return properties;
+	};
+
+	const reportError = (error, id) => {
+		let errorName;
+
+		try {
+			// A name lives outside the own enumerable properties, and cloning drops a custom one, so it travels on its own.
+			errorName = typeof error?.name === 'string' ? error.name : undefined;
+
+			globalThis.postMessage({id, error, errorName, errorProperties: getErrorProperties(error)});
+		} catch {
+			try {
+				// The name is a string, so it can always come along.
+				globalThis.postMessage({id, error, errorName});
+			} catch (cloneError) {
+				globalThis.postMessage({id, error: cloneError});
+			}
+		}
+	};
+`;
+
 const makeContent = function_ =>
-	`
-	globalThis.onmessage = async ({data: arguments_}) => {
+	errorReporter
+	+ `
+	globalThis.onmessage = async ({data: {id, arguments_}}) => {
 		try {
 			const output = await (${function_.toString()})(...arguments_);
-			globalThis.postMessage({output});
+			globalThis.postMessage({id, output});
 		} catch (error) {
-			globalThis.postMessage({error});
+			reportError(error, id);
 		}
 	};
 	`;
 
-export default function makeAsynchronous(function_, options) {
-	const content = makeContent(function_);
-	const setup = () => createWorker(content, options);
-
-	async function run({worker, arguments_}) {
-		const promise = pEvent(worker, 'message', {
-			rejectionEvents: ['error', 'messageerror'],
-		});
-
-		worker.postMessage(arguments_);
-
-		const {output, error} = getMessageData(await promise);
-
-		if (error) {
-			throw error;
+// The worker reports a result as `{output}` and a failure as `{error}`, so the key tells them apart. A function can throw anything, including `undefined`, so the value itself cannot be used for that.
+const getResult = data => {
+	if ('error' in data) {
+		// Cloning keeps the name of a built-in error and drops a custom one. Defining is needed because an error can have a getter-only name, like `DOMException.name`.
+		if (data.errorName !== undefined && data.error.name !== data.errorName) {
+			Object.defineProperty(data.error, 'name', {value: data.errorName, writable: true, configurable: true});
 		}
 
-		return output;
+		if (data.errorProperties) {
+			// Defining is needed because an error can have a getter-only property.
+			Object.defineProperties(data.error, Object.getOwnPropertyDescriptors(data.errorProperties));
+		}
+
+		throw data.error;
 	}
 
-	const fn = async (...arguments_) => {
-		const {worker, cleanup} = await setup();
+	return data.output;
+};
+
+export default function makeAsynchronous(function_, options) {
+	const content = makeContent(function_);
+
+	const run = async (arguments_, signal) => {
+		const {cleanup, request} = await createWorker(content, options, signal);
 
 		try {
-			return await run({arguments_, worker});
+			return getResult(await request(arguments_));
 		} finally {
 			cleanup();
 		}
 	};
 
-	fn.withSignal = signal => async (...arguments_) => {
-		signal.throwIfAborted();
-
-		let cleanup;
-
-		try {
-			const {worker, cleanup: cleanup_} = await setup();
-			cleanup = cleanup_;
-			signal.throwIfAborted();
-
-			const abortPromise = pEvent(signal, [], {
-				rejectionEvents: ['abort'],
-			});
-
-			try {
-				return await Promise.race([
-					run({arguments_, worker}),
-					abortPromise,
-				]);
-			} finally {
-				abortPromise.cancel();
-			}
-		} catch (error) {
-			signal.throwIfAborted();
-			throw error;
-		} finally {
-			cleanup?.();
-		}
-	};
+	const fn = async (...arguments_) => run(arguments_);
+	fn.withSignal = signal => async (...arguments_) => run(arguments_, signal);
 
 	return fn;
 }
 
 const makeIterableContent = function_ =>
-	`
+	errorReporter
+	+ `
 	const nothing = Symbol('nothing');
 	let iterator = nothing;
 
-	globalThis.onmessage = async ({data: arguments_}) => {
+	globalThis.onmessage = async ({data: {id, arguments_}}) => {
 		try {
 			if (iterator === nothing) {
-				iterator = await (${function_.toString()})(...arguments_);
+				const iterable = await (${function_.toString()})(...arguments_);
+				// A function can return any iterable, not just an iterator.
+				iterator = iterable[Symbol.asyncIterator]?.() ?? iterable[Symbol.iterator]?.() ?? iterable;
 			}
 
 			const output = await iterator.next();
-			globalThis.postMessage({output});
+
+			// The iterator protocol requires an object, otherwise the iteration would never end.
+			if (typeof output !== 'object' || output === null) {
+				throw new TypeError('Iterator result is not an object');
+			}
+
+			globalThis.postMessage({id, output});
 		} catch (error) {
-			globalThis.postMessage({error});
+			reportError(error, id);
 		}
 	};
 	`;
 
 export function makeAsynchronousIterable(function_, options) {
 	const content = makeIterableContent(function_);
-	const setup = () => createWorker(content, options);
+
+	const iterate = async function * (arguments_, signal) {
+		const {cleanup, request} = await createWorker(content, options, signal);
+
+		try {
+			// The wrapped function only runs for the first message, so the later ones carry no arguments and skip re-cloning them for every item.
+			let datum = arguments_;
+
+			while (true) {
+				const {value, done} = getResult(await request(datum)); // eslint-disable-line no-await-in-loop
+				datum = undefined;
+
+				if (done) {
+					break;
+				}
+
+				yield value;
+			}
+		} finally {
+			cleanup();
+		}
+	};
 
 	const fn = (...arguments_) => ({
-		async * [Symbol.asyncIterator]() {
-			const {worker, cleanup} = await setup();
-
-			try {
-				let isFirstMessage = true;
-
-				while (true) {
-					const promise = pEvent(worker, 'message', {
-						rejectionEvents: ['error', 'messageerror'],
-					});
-
-					worker.postMessage(isFirstMessage ? arguments_ : undefined);
-					isFirstMessage = false;
-
-					const {output, error} = getMessageData(await promise); // eslint-disable-line no-await-in-loop
-
-					if (error) {
-						throw error;
-					}
-
-					const {value, done} = output;
-
-					if (done) {
-						break;
-					}
-
-					yield value;
-				}
-			} finally {
-				cleanup();
-			}
-		},
+		[Symbol.asyncIterator]: () => iterate(arguments_),
 	});
 
 	fn.withSignal = signal => (...arguments_) => ({
-		async * [Symbol.asyncIterator]() {
-			signal.throwIfAborted();
-
-			let cleanup;
-
-			try {
-				const {worker, cleanup: cleanup_} = await setup();
-				cleanup = cleanup_;
-				signal.throwIfAborted();
-
-				const abortPromise = pEvent(signal, [], {
-					rejectionEvents: ['abort'],
-				});
-
-				let isFirstMessage = true;
-
-				try {
-					while (true) {
-						const promise = Promise.race([
-							pEvent(worker, 'message', {
-								rejectionEvents: ['error', 'messageerror'],
-							}),
-							abortPromise,
-						]);
-
-						worker.postMessage(isFirstMessage ? arguments_ : undefined);
-						isFirstMessage = false;
-
-						const {output, error} = getMessageData(await promise); // eslint-disable-line no-await-in-loop
-
-						if (error) {
-							throw error;
-						}
-
-						const {value, done} = output;
-
-						if (done) {
-							break;
-						}
-
-						yield value;
-					}
-				} finally {
-					abortPromise.cancel();
-				}
-			} catch (error) {
-				signal.throwIfAborted();
-				throw error;
-			} finally {
-				cleanup?.();
-			}
-		},
+		[Symbol.asyncIterator]: () => iterate(arguments_, signal),
 	});
 
 	return fn;
